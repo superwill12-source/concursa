@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+feedparser
+pdfplumber
+httpx
+python-multipart
