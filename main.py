@@ -42,20 +42,26 @@ def cfgia(x_ia_provider: str = Header("gemini"), x_ia_key: str = Header(""), x_i
     return {"prov": x_ia_provider if x_ia_provider in PROV else "gemini", "key": x_ia_key.strip(), "model": x_ia_model.strip()}
 
 def ia(prompt, cfg, max_tokens=3000):
-    """Usa a IA e a chave de quem está usando o app (cada pessoa paga/usa a sua)."""
-    if not cfg["key"]: return "Configure sua IA: toque no ícone do robô no topo do app e cole sua chave."
+    """Devolve (texto, None) em sucesso ou (None, mensagem_de_erro) em falha. Nunca guarda erro como resposta."""
+    if not cfg["key"]: return None, "Configure sua IA: toque no ícone do robô no topo do app e cole sua chave."
     url, padrao = PROV[cfg["prov"]]; m = cfg["model"] or padrao; k = cfg["key"]
     try:
         if cfg["prov"] == "gemini":
-            r = httpx.post(url.format(m=m), headers={"x-goog-api-key": k}, timeout=120, json={"contents": [{"parts": [{"text": prompt}]}]}).json()
-            return r["candidates"][0]["content"]["parts"][0]["text"]
+            resp = httpx.post(url.format(m=m), headers={"x-goog-api-key": k}, timeout=120, json={"contents": [{"parts": [{"text": prompt}]}]})
+        elif cfg["prov"] == "anthropic":
+            resp = httpx.post(url, headers={"x-api-key": k, "anthropic-version": "2023-06-01"}, timeout=120, json={"model": m, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]})
+        else:
+            resp = httpx.post(url, headers={"Authorization": f"Bearer {k}"}, timeout=120, json={"model": m, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]})
+        r = resp.json() if resp.content else {}
+        if resp.status_code >= 400 or "error" in r:
+            return None, f"A IA {cfg['prov']} recusou o pedido (código {resp.status_code}): {str(r.get('error', r))[:300]}"
+        if cfg["prov"] == "gemini":
+            return r["candidates"][0]["content"]["parts"][0]["text"], None
         if cfg["prov"] == "anthropic":
-            r = httpx.post(url, headers={"x-api-key": k, "anthropic-version": "2023-06-01"}, timeout=120, json={"model": m, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}).json()
-            return r["content"][0]["text"]
-        r = httpx.post(url, headers={"Authorization": f"Bearer {k}"}, timeout=120, json={"model": m, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}).json()
-        return r["choices"][0]["message"]["content"]
-    except Exception:
-        return "Não consegui falar com a IA. Confira a chave, o modelo e se ainda há cota gratuita."
+            return r["content"][0]["text"], None
+        return r["choices"][0]["message"]["content"], None
+    except Exception as ex:
+        return None, f"Não consegui falar com a IA {cfg['prov']}: {str(ex)[:200]}"
 
 # ---------- 1. Coletor de concursos (abertos e previstos) ----------
 LAST = {"fontes": [], "novos": 0, "erro": ""}
@@ -143,11 +149,17 @@ def questoes(banca: str = "", materia: str = "", ano: int = 0, nivel: str = "", 
 # ---------- 3. Comentários (IA + alunos + professores) ----------
 @app.get("/questoes/{qid}/comentarios")
 def comentarios(qid: int, cfg: dict = Depends(cfgia)):
-    if cfg["key"] and not rows("select 1 from comentarios where questao_id=? and tipo='ia'", (qid,)):
+    banco = rows("select * from comentarios where questao_id=? and tipo!='ia' or (questao_id=? and tipo='ia' and autor='IA')", (qid, qid))
+    if not cfg["key"]:
+        return [{"id": 0, "autor": "Sistema", "tipo": "sistema", "texto": "Configure sua IA no ícone do robô no topo para ver o comentário da IA."}] + banco
+    if not rows("select 1 from comentarios where questao_id=? and tipo='ia'", (qid,)):
         q = rows("select * from questoes where id=?", (qid,))[0]
-        txt = ia(f"Comente esta questão de concurso, explique por que o gabarito {q['gabarito']} está certo e as demais erradas, cite a base legal quando houver:\n{q['enunciado']}\n{q['alts']}", cfg, 800)
-        db.execute("insert into comentarios(questao_id,autor,tipo,texto) values(?,?,?,?)", (qid, "IA", "ia", txt)); db.commit()
-    return rows("select * from comentarios where questao_id=?", (qid,))
+        texto, erro = ia(f"Comente esta questão de concurso, explique por que o gabarito {q['gabarito']} está certo e as demais erradas, cite a base legal quando houver:\n{q['enunciado']}\n{q['alts']}", cfg, 800)
+        if erro:  # erro não é salvo: a próxima tentativa refaz o pedido
+            return [{"id": 0, "autor": "Sistema", "tipo": "sistema", "texto": erro}] + banco
+        db.execute("insert into comentarios(questao_id,autor,tipo,texto) values(?,?,?,?)", (qid, "IA", "ia", texto)); db.commit()
+        banco = rows("select * from comentarios where questao_id=? and tipo!='ia' or (questao_id=? and tipo='ia' and autor='IA')", (qid, qid))
+    return banco
 
 class Com(BaseModel): autor: str; tipo: str = "aluno"; texto: str  # tipo: aluno | professor (professor exige verificação)
 @app.post("/questoes/{qid}/comentarios")
@@ -163,10 +175,14 @@ class Edital(BaseModel): conteudo: str
 @app.post("/apostila")
 def apostila(e: Edital, cfg: dict = Depends(cfgia)):
     if not cfg["key"]: return {"topicos": [], "apostila": "Configure sua IA (ícone do robô no topo) para gerar apostilas."}
-    resp = ia(f"Divida este conteúdo programático em tópicos de estudo. Responda só um array JSON de strings:\n{e.conteudo}", cfg, 1500)
+    resp, erro = ia(f"Divida este conteúdo programático em tópicos de estudo. Responda só um array JSON de strings:\n{e.conteudo}", cfg, 1500)
+    if erro: return {"topicos": [], "apostila": erro}
     m = re.search(r"\[.*\]", resp, re.S)
     try: topicos = json.loads(m.group(0)) if m else []
     except Exception: topicos = []
-    if not topicos: return {"topicos": [], "apostila": "A IA não devolveu os tópicos. Confira sua chave e tente de novo. Resposta: " + resp[:300]}
-    caps = [f"# {t}\n" + ia(f"Escreva um capítulo completo de apostila para concurso sobre '{t}': teoria detalhada, quadro comparativo, exemplos, pegadinhas de banca, base legal citada e 5 exercícios com gabarito. Não invente leis.", cfg, 3500) for t in topicos[:12]]
+    if not topicos: return {"topicos": [], "apostila": "A IA não devolveu os tópicos em formato válido. Resposta: " + resp[:300]}
+    caps = []
+    for t in topicos[:12]:
+        cap, erro = ia(f"Escreva um capítulo completo de apostila para concurso sobre '{t}': teoria detalhada, quadro comparativo, exemplos, pegadinhas de banca, base legal citada e 5 exercícios com gabarito. Não invente leis.", cfg, 3500)
+        caps.append(f"# {t}\n" + (cap if not erro else erro))
     return {"topicos": topicos, "apostila": "\n\n".join(caps)}
