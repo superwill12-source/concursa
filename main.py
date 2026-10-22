@@ -13,8 +13,13 @@ create table if not exists questoes(id integer primary key, banca, ano, materia,
 create table if not exists comentarios(id integer primary key, questao_id, autor, tipo, texto);""")
 NOMES = {"AC":"Acre","AL":"Alagoas","AP":"Amapá","AM":"Amazonas","BA":"Bahia","CE":"Ceará","DF":"Distrito Federal","ES":"Espírito Santo","GO":"Goiás","MA":"Maranhão","MT":"Mato Grosso","MS":"Mato Grosso do Sul","MG":"Minas Gerais","PA":"Pará","PB":"Paraíba","PR":"Paraná","PE":"Pernambuco","PI":"Piauí","RJ":"Rio de Janeiro","RN":"Rio Grande do Norte","RS":"Rio Grande do Sul","RO":"Rondônia","RR":"Roraima","SC":"Santa Catarina","SP":"São Paulo","SE":"Sergipe","TO":"Tocantins"}
 G = "https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-419&q="
-FEEDS = [("BR", G+"concurso+público+edital+inscrições"), ("BR", G+"concurso+público+previsto+autorizado")] + \
-        [(u, G+quote(f"concurso público {n}")) for u, n in NOMES.items()]
+B = "https://www.bing.com/news/search?format=rss&mkt=pt-BR&q="
+FEEDS = []
+for uf, nome in [("BR", "Brasil")] + list(NOMES.items()):
+    termo = "concurso público" if uf == "BR" else f"concurso público {nome}"
+    FEEDS.append((uf, B + quote(termo + " edital inscrições")))
+    FEEDS.append((uf, G + quote(termo)))
+FEEDS.append(("BR", B + quote("concurso público previsto autorizado")))
 
 def rows(q, a=()): return [dict(r) for r in db.execute(q, a)]
 PROV = {  # provedor: (url, modelo padrão)
@@ -49,8 +54,9 @@ def ia(prompt, cfg, max_tokens=3000):
 LAST = {"fontes": [], "novos": 0, "erro": ""}
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"}
 def coletar_sync():
-    novos = 0; fontes = []
-    for uf0, url in FEEDS:
+  try:
+    novos = 0; fontes = []; LAST.update(fontes=[], novos=0, erro="rodando", andamento=0)
+    for k, (uf0, url) in enumerate(FEEDS):
         info = {"uf": uf0, "recebidas": 0, "aceitas": 0, "erro": ""}
         try:
             r = httpx.get(url, headers=UA, timeout=15, follow_redirects=True)
@@ -58,7 +64,7 @@ def coletar_sync():
             itens = feedparser.parse(r.text).entries[:30]
             info["recebidas"] = len(itens)
         except Exception as ex:
-            info["erro"] = str(ex)[:200]; fontes.append(info); continue
+            info["erro"] = str(ex)[:200]; fontes.append(info); LAST.update(fontes=list(fontes), andamento=k+1); continue
         for e in itens:
             t = f"{e.get('title','')} {e.get('summary','')}".lower()
             if "concurso" not in t and "edital" not in t: continue
@@ -69,14 +75,20 @@ def coletar_sync():
                 db.execute("insert into concursos(titulo,uf,status,link,data) values(?,?,?,?,?)", (e.title, uf, status, e.link, e.get("published", "")))
                 novos += 1; info["aceitas"] += 1
             except sqlite3.IntegrityError: pass
-        fontes.append(info)
+        fontes.append(info); novos_ok = novos
+        LAST.update(fontes=list(fontes), novos=novos, andamento=k+1)
     db.commit()
-    LAST.update(fontes=fontes, novos=novos)
+    LAST.update(fontes=fontes, novos=novos, erro="", andamento=len(FEEDS))
     return {"novos": novos}
+  except Exception as ex:
+    import traceback
+    LAST.update(erro=traceback.format_exc()[-1500:])
+    print("ERRO NA BUSCA:", traceback.format_exc(), flush=True)
 
 @app.get("/diagnostico")
 def diagnostico():
     total = rows("select count(*) as n from concursos")[0]["n"]
+    LAST["andamento"] = LAST.get("andamento", 0)
     return {"concursos_no_banco": total, "ultima_busca": LAST}
 
 SEED = [("Exemplo",2024,"Português","facil","Assinale a frase com a concordância verbal correta.",[["A","Haviam muitos candidatos."],["B","Fazem dois anos que estudo."],["C","Houve muitos candidatos."],["D","Existe muitos candidatos."]],"C"),
