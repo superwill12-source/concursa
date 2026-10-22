@@ -15,5 +15,96 @@ Expanded(child:loading?const Center(child:CircularProgressIndicator()):items.isE
 ]));}
 class QuestionTile extends StatelessWidget{final Question question;final VoidCallback onChanged;const QuestionTile({super.key,required this.question,required this.onChanged});
 @override Widget build(BuildContext context)=>Card(child:ListTile(contentPadding:const EdgeInsets.all(14),title:Text(question.prompt,maxLines:3,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w600)),subtitle:Padding(padding:const EdgeInsets.only(top:8),child:Text('${question.subject} • ${question.board} • ${question.difficulty}')),trailing:IconButton(icon:Icon(question.favorite?Icons.star:Icons.star_border,color:question.favorite?lime:null),onPressed:()async{await DatabaseService.instance.toggleFavorite(question);onChanged();}),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>QuestionDetail(question:question))).then((_)=>onChanged())));}
-class QuestionDetail extends StatefulWidget{final Question question;const QuestionDetail({super.key,required this.question});@override State<QuestionDetail> createState()=>_QuestionDetailState();}
-class _QuestionDetailState extends State<QuestionDetail>{String? chosen;bool checked=false;@override Widget build(BuildContext context){final q=widget.question;final letters=['A','B','C','D','E'];return Scaffold(appBar:AppBar(title:const Text('Resolver questão')),body:ListView(padding:const EdgeInsets.all(18),children:[Text(q.subject.toUpperCase(),style:const TextStyle(color:lime,fontWeight:FontWeight.bold)),const SizedBox(height:10),Text(q.prompt,style:const TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const SizedBox(height:16),...List.generate(5,(i){if(q.options[i].trim().isEmpty)return const SizedBox.shrink();final letter=letters[i];final isCorrect=checked&&letter==q.answer;final isWrong=checked&&letter==chosen&&letter!=q.answer;return Card(color:isCorrect?Colors.green.withValues(alpha:.2):isWrong?Colors.red.withValues(alpha:.2):null,child:RadioListTile<String>(value:letter,groupValue:chosen,title:Text('$letter) ${q.options[i]}'),onChanged:checked?null:(v)=>setState(()=>chosen=v)));}),const SizedBox(height:12),FilledButton(onPressed:chosen==null||checked?null:()async{await DatabaseService.instance.recordAttempt(q,chosen!);setState(()=>checked=true);},child:const Text('Confirmar resposta')),if(checked)...[const SizedBox(height:12),Text(chosen==q.answer?'Resposta correta!':'Resposta incorreta. Gabarito: ${q.answer}',style:TextStyle(fontWeight:FontWeight.bold,color:chosen==q.answer?Colors.greenAccent:Colors.orangeAccent)),if(q.explanation.isNotEmpty)Card(child:Padding(padding:const EdgeInsets.all(14),child:Text('Explicação: ${q.explanation}'))),Text('Fonte: ${q.source}',style:const TextStyle(color:Colors.white54,fontSize:12))]]) ;}}
+class QuestionDetail extends StatefulWidget {
+  final Question question;
+  const QuestionDetail({super.key, required this.question});
+
+  @override
+  State<QuestionDetail> createState() => _QuestionDetailState();
+}
+
+class _QuestionDetailState extends State<QuestionDetail> {
+  String? chosen;
+  bool checked = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final q = widget.question;
+    const letters = ['A', 'B', 'C', 'D', 'E'];
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Resolver questão')),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          Text(
+            q.subject.toUpperCase(),
+            style: const TextStyle(color: lime, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            q.prompt,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          ...List.generate(5, (i) {
+            if (q.options[i].trim().isEmpty) {
+              return const SizedBox.shrink();
+            }
+            final letter = letters[i];
+            final isCorrect = checked && letter == q.answer;
+            final isWrong = checked && letter == chosen && letter != q.answer;
+            return Card(
+              color: isCorrect
+                  ? Colors.green.withValues(alpha: .2)
+                  : isWrong
+                      ? Colors.red.withValues(alpha: .2)
+                      : null,
+              child: RadioListTile<String>(
+                value: letter,
+                groupValue: chosen,
+                title: Text('$letter) ${q.options[i]}'),
+                onChanged: checked ? null : (v) => setState(() => chosen = v),
+              ),
+            );
+          }),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: chosen == null || checked
+                ? null
+                : () async {
+                    await DatabaseService.instance.recordAttempt(q, chosen!);
+                    setState(() => checked = true);
+                  },
+            child: const Text('Confirmar resposta'),
+          ),
+          if (checked) ...[
+            const SizedBox(height: 12),
+            Text(
+              chosen == q.answer
+                  ? 'Resposta correta!'
+                  : 'Resposta incorreta. Gabarito: ${q.answer}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: chosen == q.answer
+                    ? Colors.greenAccent
+                    : Colors.orangeAccent,
+              ),
+            ),
+            if (q.explanation.isNotEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Text('Explicação: ${q.explanation}'),
+                ),
+              ),
+            Text(
+              'Fonte: ${q.source}',
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}

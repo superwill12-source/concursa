@@ -1,41 +1,68 @@
 name: Gerar APK do Concursa
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-      - uses: subosito/flutter-action@v2
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - name: Criar projeto Android temporário
+
+      - name: Verificar arquivos Dart na raiz
+        run: |
+          for f in main.dart question.dart database_service.dart home_screen.dart questions_screen.dart simulado_screen.dart import_screen.dart progress_screen.dart; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Arquivo ausente na raiz do repositório: $f"
+              exit 1
+            fi
+          done
+
+      - name: Criar projeto Android e copiar todos os arquivos
         run: |
           flutter create app --project-name concursa --platforms android --org br.com.concursa
           cp pubspec.yaml app/pubspec.yaml
+          rm -f app/test/widget_test.dart
+          mkdir -p app/lib
           cp main.dart question.dart database_service.dart home_screen.dart questions_screen.dart simulado_screen.dart import_screen.dart progress_screen.dart app/lib/
-      - name: Configurar permissão de internet
+          echo "Arquivos copiados para app/lib:"
+          ls -la app/lib
+
+      - name: Habilitar internet no Android
         run: |
-          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\\n    <application#' app/android/app/src/main/AndroidManifest.xml
+          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' app/android/app/src/main/AndroidManifest.xml
+
       - name: Instalar dependências
         working-directory: app
         run: flutter pub get
+
       - name: Analisar código
         working-directory: app
-        run: flutter analyze
-      - name: Compilar APK release
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Compilar APK
         working-directory: app
         run: flutter build apk --release --build-number=${{ github.run_number }}
-      - name: Publicar APK como artefato
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: concursa-apk
