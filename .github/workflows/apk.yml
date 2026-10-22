@@ -1,52 +1,41 @@
+
 name: Concursa APK
 
 'on':
-workflow_dispatch:
-push:
-branches:
-- main
+  workflow_dispatch:
 
 jobs:
-build:
-runs-on: ubuntu-latest
-steps:
-- name: Checkout
-uses: actions/checkout@v4
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  - name: Setup Flutter
-    uses: subosito/flutter-action@v2
-    with:
-      channel: stable
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
 
-  - name: Check files
-    run: |
-      echo "Raiz do projeto:"
-      ls -la
-      echo "Arquivos Dart:"
-      find . -maxdepth 4 -name '*.dart' -not -path './.git/*'
-      test -f pubspec.yaml
+      - name: Check project
+        run: |
+          echo "Arquivos do projeto:"
+          ls -la
+          test -f pubspec.yaml
+          mkdir -p lib
+          if [ ! -f lib/main.dart ]; then
+            test -f main.dart
+            cp main.dart lib/main.dart
+          fi
 
-  - name: Prepare entry point
-    run: |
-      mkdir -p lib
-      if [ ! -f lib/main.dart ]; then
-        if [ -f main.dart ]; then
-          cp main.dart lib/main.dart
-        else
-          echo "main.dart não encontrado"
-          exit 1
-        fi
-      fi
+      - name: Install dependencies
+        run: flutter pub get
 
-  - name: Install dependencies
-    run: flutter pub get
+      - name: Build APK
+        run: flutter build apk --release
 
-  - name: Build APK
-    run: flutter build apk --release
-
-  - name: Upload APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: Concursa-APK
-      path: build/app/outputs/flutter-apk/app-release.apk
-      if-no-files-found: error
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Concursa-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
