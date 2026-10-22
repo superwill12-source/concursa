@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar cÃģdigo
+      - name: Baixar código
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -35,12 +35,29 @@ jobs:
           mkdir -p app/lib
           cp main.dart question.dart database_service.dart home_screen.dart questions_screen.dart simulado_screen.dart import_screen.dart progress_screen.dart app/lib/
 
+      - name: Definir compileSdk 36 (exigido pelos plugins)
+        run: |
+          ARQ_KTS=app/android/app/build.gradle.kts
+          ARQ_GROOVY=app/android/app/build.gradle
+          if [ -f "$ARQ_KTS" ]; then
+            sed -i 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 36/' "$ARQ_KTS"
+          fi
+          if [ -f "$ARQ_GROOVY" ]; then
+            sed -i 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 36/' "$ARQ_GROOVY"
+          fi
+          echo "Linhas de compileSdk após a troca:"
+          grep -n "compileSdk" app/android/app/build.gradle* || true
+          if ! grep -qE "compileSdk(Version)? ?=? ?36" app/android/app/build.gradle*; then
+            echo "::error::Não consegui definir compileSdk 36. Veja as linhas acima."
+            exit 1
+          fi
+
       - name: Permitir internet no app
         run: |
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' app/android/app/src/main/AndroidManifest.xml
           grep -c "INTERNET" app/android/app/src/main/AndroidManifest.xml
 
-      - name: Instalar dependÃŠncias
+      - name: Instalar dependências
         working-directory: app
         run: flutter pub get
 
