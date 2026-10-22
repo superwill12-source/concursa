@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const api = String.fromEnvironment('API', defaultValue: 'http://10.0.2.2:8000'); // troque pela URL https do servidor
 String prov = 'gemini', key = '', model = '';
@@ -66,7 +67,7 @@ class _C extends State<Concursos> {
       if (s.hasError) return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('Não consegui conectar ao servidor. Se ele estava desligado, espere 1 minuto e volte.\n\n${s.error}')));
       if (!s.hasData) return const Center(child: CircularProgressIndicator());
       final l = s.data as List; if (l.isEmpty) return const Center(child: Text('Nenhum concurso. Rode /coletar no servidor.'));
-      return ListView(children: [for (final d in l) Card(child: ListTile(title: Text(d['titulo']), subtitle: Text('${d['uf']} · ${d['status']}'), trailing: Icon(d['status'] == 'aberto' ? Icons.check_circle : Icons.schedule)))]);
+      return ListView(children: [for (final d in l) Card(child: ListTile(title: Text(d['titulo']), subtitle: Text('${d['uf']} · ${d['status']}\nToque para abrir a notícia'), isThreeLine: true, trailing: Icon(d['status'] == 'aberto' ? Icons.check_circle : Icons.schedule), onTap: () => launchUrl(Uri.parse(d['link']), mode: LaunchMode.externalApplication)))]);
     }))]);
 }
 
