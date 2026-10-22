@@ -1,48 +1,80 @@
-
 name: Build Concursa APK
 
 'on':
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+push:
+branches:
+- main
+workflow_dispatch:
 
 permissions:
-  contents: read
+contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+build:
+runs-on: ubuntu-latest
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+steps:
+  - name: Checkout Concursa
+    uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
+  - name: Setup Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
 
-      - name: Check project
-        run: |
-          pwd
-          ls -la
-          test -f pubspec.yaml
+  - name: Setup Flutter
+    uses: subosito/flutter-action@v2
+    with:
+      channel: stable
+      cache: true
 
-      - name: Install dependencies
-        run: flutter pub get
+  - name: Verify and prepare project
+    shell: bash
+    run: |
+      set -e
 
-      - name: Build APK
-        run: flutter build apk --release
+      if [ ! -f pubspec.yaml ]; then
+        echo "ERRO: pubspec.yaml não encontrado na raiz."
+        exit 1
+      fi
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Concursa-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
+      if [ ! -f lib/main.dart ]; then
+        if [ -f main.dart ]; then
+          mkdir -p lib
+          cp main.dart lib/main.dart
+        else
+          echo "ERRO: main.dart não encontrado."
+          find . -maxdepth 4 -name main.dart
+          exit 1
+        fi
+      fi
+
+      mkdir -p lib
+
+      for file in database_service.dart home_screen.dart import_screen.dart progress_screen.dart question.dart questions_screen.dart; do
+        if [ -f "$file" ] && [ ! -f "lib/$file" ]; then
+          cp "$file" "lib/$file"
+        fi
+      done
+
+      echo "Estrutura do projeto:"
+      find lib -maxdepth 2 -type f
+
+  - name: Install dependencies
+    run: flutter pub get
+
+  - name: Check Dart code
+    run: flutter analyze --no-pub
+    continue-on-error: true
+
+  - name: Build release APK
+    run: flutter build apk --release
+
+  - name: Upload Concursa APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: Concursa-APK
+      path: build/app/outputs/flutter-apk/app-release.apk
+      if-no-files-found: error
+      retention-days: 7
