@@ -1,11 +1,10 @@
-name: Build Android APK
+name: Build Concursa APK
 
 on:
-workflow_dispatch:
 push:
-paths:
-- '**'
-- '.github/workflows/apk.yml'
+branches:
+- main
+workflow_dispatch:
 
 permissions:
 contents: read
@@ -15,33 +14,8 @@ build:
 runs-on: ubuntu-latest
 
 steps:
-  - name: Checkout Concursa
+  - name: Download repository
     uses: actions/checkout@v4
-
-  - name: Locate Flutter project
-    id: project
-    shell: bash
-    run: |
-      set -e
-      FILE="$(find . -type f -name pubspec.yaml \
-        -not -path './.git/*' \
-        -not -path '*/.dart_tool/*' | head -n 1)"
-
-      if [ -z "$FILE" ]; then
-        echo "Não encontrei pubspec.yaml."
-        echo "Arquivos existentes:"
-        find . -maxdepth 3 -type f | head -n 100
-        exit 1
-      fi
-
-      DIR="$(dirname "$FILE")"
-      echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-      echo "Projeto encontrado em: $DIR"
-
-  - name: Install Flutter
-    uses: subosito/flutter-action@v2
-    with:
-      channel: stable
 
   - name: Install Java
     uses: actions/setup-java@v4
@@ -49,16 +23,31 @@ steps:
       distribution: temurin
       java-version: '17'
 
-  - name: Build Concursa APK
-    working-directory: ${{ steps.project.outputs.dir }}
+  - name: Install Flutter
+    uses: subosito/flutter-action@v2
+    with:
+      channel: stable
+      cache: true
+
+  - name: Verify Flutter project
     run: |
-      flutter pub get
-      flutter build apk --release
+      test -f pubspec.yaml || {
+        echo "pubspec.yaml não encontrado na raiz."
+        exit 1
+      }
+      flutter --version
+      flutter doctor -v
+
+  - name: Install dependencies
+    run: flutter pub get
+
+  - name: Build Concursa APK
+    run: flutter build apk --release
 
   - name: Upload Concursa APK
     uses: actions/upload-artifact@v4
     with:
       name: Concursa-APK
-      path: ${{ steps.project.outputs.dir }}/build/app/outputs/flutter-apk/app-release.apk
+      path: build/app/outputs/flutter-apk/app-release.apk
       if-no-files-found: error
       retention-days: 7
