@@ -1,87 +1,102 @@
-name: Gerar APK do Concursa 
+name: Build Android APK
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+push:
+paths:
+- 'Minimalista-Launcher-Projeto.zip'
+- '.github/workflows/android.yml'
+workflow_dispatch:
 
 permissions:
-  contents: read
+contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Baixar código
-        uses: actions/checkout@v4
+build:
+runs-on: ubuntu-latest
 
-      - name: Configurar Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v4
 
-      - name: Configurar Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
+  - name: Install Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
 
-      - name: Verificar arquivos Dart na raiz
-        run: |
-          for f in main.dart question.dart database_service.dart home_screen.dart questions_screen.dart simulado_screen.dart import_screen.dart progress_screen.dart; do
-            if [ ! -f "$f" ]; then
-              echo "::error::Arquivo ausente na raiz do repositório: $f"
-              exit 1
-            fi
-          done
+  - name: Install Android SDK
+    uses: android-actions/setup-android@v3
 
-      - name: Criar projeto Android e copiar todos os arquivos
-        run: |
-          flutter create app --project-name concursa --platforms android --org br.com.concursa
-          cp pubspec.yaml app/pubspec.yaml
-          rm -f app/test/widget_test.dart
-          mkdir -p app/lib
-          cp main.dart question.dart database_service.dart home_screen.dart questions_screen.dart simulado_screen.dart import_screen.dart progress_screen.dart app/lib/
-          echo "Arquivos copiados para app/lib:"
-          ls -la app/lib
+  - name: Extract project
+    shell: bash
+    run: |
+      set -e
+      ZIP=$(find . -maxdepth 3 -type f -name 'Minimalista-Launcher-Projeto.zip' | head -n 1)
+      if [ -z "$ZIP" ]; then
+        echo "ERRO: Minimalista-Launcher-Projeto.zip não encontrado."
+        exit 1
+      fi
+      mkdir -p build-source
+      unzip -o "$ZIP" -d build-source
 
-      - name: Configurar SDK Android para dependências atuais
-        run: |
-          - name: Configure Android SDK
-  shell: bash
-  run: |
-    FILE=$(find . -type f \( -name "build.gradle.kts" -o -name "build.gradle" \) -path "*/app/*" | head -n 1)
-    if [ -z "$FILE" ]; then
-      echo "ERRO: arquivo build.gradle não encontrado"
-      find . -maxdepth 5 -type f \( -name "build.gradle" -o -name "build.gradle.kts" \)
+  - name: Locate project
+    id: project
+    shell: bash
+    run: |
+      set -e
+      FLUTTER_FILE=$(find build-source -type f -name pubspec.yaml -not -path '*/.dart_tool/*' | head -n 1)
+      if [ -n "$FLUTTER_FILE" ]; then
+        DIR=$(dirname "$FLUTTER_FILE")
+        echo "type=flutter" >> "$GITHUB_OUTPUT"
+        echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+        echo "Flutter project: $DIR"
+        exit 0
+      fi
+
+      for FILE in $(find build-source -type f \( -name build.gradle -o -name build.gradle.kts \)); do
+        DIR=$(dirname "$FILE")
+        if [ "$(basename "$DIR")" = "app" ] && [ -f "$DIR/../settings.gradle" -o -f "$DIR/../settings.gradle.kts" ]; then
+          echo "type=gradle" >> "$GITHUB_OUTPUT"
+          echo "dir=$(dirname "$DIR")" >> "$GITHUB_OUTPUT"
+          echo "Android project: $(dirname "$DIR")"
+          exit 0
+        fi
+      done
+
+      echo "ERRO: não encontrei um projeto Android válido dentro do ZIP."
+      find build-source -maxdepth 5 -type f | head -n 100
       exit 1
-    fi
-    echo "Arquivo encontrado: $FILE"
-    sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$FILE"
-    sed -i 's/compileSdk flutter.compileSdkVersion/compileSdk 36/' "$FILE"
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' app/android/app/build.gradle
-          grep -n "compileSdk" app/android/app/build.gradle* || true
 
-      - name: Habilitar internet no Android
-        run: |
-          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' app/android/app/src/main/AndroidManifest.xml
+  - name: Install Flutter
+    if: steps.project.outputs.type == 'flutter'
+    uses: subosito/flutter-action@v2
+    with:
+      channel: stable
 
-      - name: Instalar dependências
-        working-directory: app
-        run: flutter pub get
+  - name: Build Flutter APK
+    if: steps.project.outputs.type == 'flutter'
+    working-directory: ${{ steps.project.outputs.dir }}
+    run: |
+      flutter pub get
+      flutter build apk --debug
 
-      - name: Analisar código
-        working-directory: app
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+  - name: Setup Gradle
+    if: steps.project.outputs.type == 'gradle'
+    uses: gradle/actions/setup-gradle@v4
+    with:
+      gradle-version: '8.9'
 
-      - name: Compilar APK
-        working-directory: app
-        run: flutter build apk --release --build-number=${{ github.run_number }}
+  - name: Build native Android APK
+    if: steps.project.outputs.type == 'gradle'
+    working-directory: ${{ steps.project.outputs.dir }}
+    run: gradle assembleDebug
 
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: concursa-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
+  - name: Upload APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: Minimalista-Launcher-APK
+      path: |
+        build-source/**/build/outputs/apk/debug/*.apk
+        build-source/**/build/app/outputs/flutter-apk/*.apk
+      if-no-files-found: error
+      retention-days: 7
