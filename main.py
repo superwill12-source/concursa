@@ -2,7 +2,8 @@ from urllib.parse import quote
 import os, re, json, threading, random, sqlite3, feedparser, pdfplumber
 from fastapi import Depends, Header, FastAPI, UploadFile, Form
 from pydantic import BaseModel
-import httpx
+import httpx, socket
+socket.setdefaulttimeout(15)
 
 app = FastAPI(title="Concursa")
 db = sqlite3.connect("app.db", check_same_thread=False); db.row_factory = sqlite3.Row
@@ -45,8 +46,7 @@ def ia(prompt, cfg, max_tokens=3000):
         return "Não consegui falar com a IA. Confira a chave, o modelo e se ainda há cota gratuita."
 
 # ---------- 1. Coletor de concursos (abertos e previstos) ----------
-@app.api_route("/coletar", methods=["GET", "POST"])
-def coletar():
+def coletar_sync():
     novos = 0
     for uf0, url in FEEDS:
         try: itens = feedparser.parse(url).entries[:30]
@@ -68,8 +68,13 @@ SEED = [("Exemplo",2024,"Português","facil","Assinale a frase com a concordânc
 if not rows("select 1 from questoes limit 1"):
     for b,a,m,n,e,al,g in SEED: db.execute("insert into questoes(banca,ano,materia,nivel,enunciado,alts,gabarito) values(?,?,?,?,?,?,?)",(b,a,m,n,e,json.dumps(al),g))
     db.commit()
+@app.api_route("/coletar", methods=["GET", "POST"])
+def coletar():
+    threading.Thread(target=coletar_sync, daemon=True).start()
+    return {"status": "busca iniciada; em 2 minutos recarregue o app"}
+
 @app.on_event("startup")
-def iniciar(): threading.Thread(target=coletar, daemon=True).start()
+def iniciar(): threading.Thread(target=coletar_sync, daemon=True).start()
 
 @app.get("/concursos")
 def concursos(uf: str = "", status: str = ""):
