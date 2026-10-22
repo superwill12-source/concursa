@@ -6,8 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 const api = String.fromEnvironment('API', defaultValue: 'http://10.0.2.2:8000'); // troque pela URL https do servidor
 String prov = 'gemini', key = '', model = '';
 Map<String, String> hd() => {'Content-Type': 'application/json', 'X-IA-Provider': prov, 'X-IA-Key': key, 'X-IA-Model': model};
-Future<dynamic> get(String p) async => jsonDecode(utf8.decode((await http.get(Uri.parse('$api$p'), headers: hd())).bodyBytes));
-Future<dynamic> post(String p, Map b) async => jsonDecode(utf8.decode((await http.post(Uri.parse('$api$p'), headers: hd(), body: jsonEncode(b))).bodyBytes));
+Future<dynamic> get(String p) async => api.isEmpty ? throw 'Servidor não configurado (falta a variável API_URL no GitHub)' : jsonDecode(utf8.decode((await http.get(Uri.parse('$api$p'), headers: hd())).bodyBytes));
+Future<dynamic> post(String p, Map b) async => api.isEmpty ? throw 'Servidor não configurado (falta a variável API_URL no GitHub)' : jsonDecode(utf8.decode((await http.post(Uri.parse('$api$p'), headers: hd(), body: jsonEncode(b))).bodyBytes));
 
 const provs = {'gemini': 'Google Gemini (grátis)', 'groq': 'Groq (grátis)', 'openrouter': 'OpenRouter (modelos grátis)', 'openai': 'ChatGPT / OpenAI', 'anthropic': 'Claude / Anthropic', 'deepseek': 'DeepSeek', 'mistral': 'Mistral'};
 const links = {'gemini': 'aistudio.google.com/apikey', 'groq': 'console.groq.com/keys', 'openrouter': 'openrouter.ai/keys', 'openai': 'platform.openai.com/api-keys', 'anthropic': 'console.anthropic.com', 'deepseek': 'platform.deepseek.com', 'mistral': 'console.mistral.ai'};
@@ -29,8 +29,11 @@ void configIA(BuildContext c) {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final p = await SharedPreferences.getInstance();
-  prov = p.getString('prov') ?? 'gemini'; key = p.getString('key') ?? ''; model = p.getString('model') ?? '';
+  ErrorWidget.builder = (d) => Material(child: Padding(padding: const EdgeInsets.all(16), child: SingleChildScrollView(child: Text('Erro no app: ${d.exception}'))));
+  try {
+    final p = await SharedPreferences.getInstance();
+    prov = p.getString('prov') ?? 'gemini'; key = p.getString('key') ?? ''; model = p.getString('model') ?? '';
+  } catch (_) {}
   runApp(MaterialApp(
   title: 'Concursa', debugShowCheckedModeBanner: false,
   theme: ThemeData(colorSchemeSeed: const Color(0xFF3A3FD6), useMaterial3: true),
@@ -60,6 +63,7 @@ class _C extends State<Concursos> {
       for (final s in ['', 'aberto', 'previsto']) Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(s == '' ? 'Todos' : s), selected: status == s, onSelected: (_) => setState(() => status = s))),
       DropdownButton<String>(value: uf, items: ['', 'SP', 'MG', 'RJ', 'BA', 'RS', 'PR', 'PE', 'CE', 'DF'].map((u) => DropdownMenuItem(value: u, child: Text(u == '' ? 'Brasil' : u))).toList(), onChanged: (v) => setState(() => uf = v!))])),
     Expanded(child: FutureBuilder(future: get('/concursos?uf=$uf&status=$status'), builder: (_, s) {
+      if (s.hasError) return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('Não consegui conectar ao servidor. Se ele estava desligado, espere 1 minuto e volte.\n\n${s.error}')));
       if (!s.hasData) return const Center(child: CircularProgressIndicator());
       final l = s.data as List; if (l.isEmpty) return const Center(child: Text('Nenhum concurso. Rode /coletar no servidor.'));
       return ListView(children: [for (final d in l) Card(child: ListTile(title: Text(d['titulo']), subtitle: Text('${d['uf']} · ${d['status']}'), trailing: Icon(d['status'] == 'aberto' ? Icons.check_circle : Icons.schedule)))]);
@@ -92,7 +96,7 @@ class _Q extends State<QCard> {
 }
 
 class QuestoesTela extends StatelessWidget { const QuestoesTela({super.key});
-  @override Widget build(BuildContext c) => FutureBuilder(future: get('/questoes'), builder: (_, s) => !s.hasData ? const Center(child: CircularProgressIndicator()) : ListView(children: [for (final q in s.data as List) QCard(q)])); }
+  @override Widget build(BuildContext c) => FutureBuilder(future: get('/questoes'), builder: (_, s) => s.hasError ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('Erro: ${s.error}'))) : !s.hasData ? const Center(child: CircularProgressIndicator()) : ListView(children: [for (final q in s.data as List) QCard(q)])); }
 
 class Simulado extends StatefulWidget { const Simulado({super.key}); @override State<Simulado> createState() => _S(); }
 class _S extends State<Simulado> {

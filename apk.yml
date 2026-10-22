@@ -2,6 +2,8 @@ name: Gerar APK
 on:
   push: {branches: [main]}
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,12 +22,21 @@ jobs:
           flutter create . --project-name concursa --platforms android --org br.com.concursa
           cp /tmp/main.dart lib/main.dart && cp /tmp/pubspec.yaml pubspec.yaml
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#<activity#<meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false"/>\n        <activity#' android/app/src/main/AndroidManifest.xml
       - name: Compilar
         working-directory: app
         run: |
           flutter pub get
           flutter build apk --release --dart-define=API=${{ vars.API_URL }}
+      - name: Renomear APK
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk concursa.apk
       - uses: actions/upload-artifact@v4
         with:
           name: concursa-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          path: concursa.apk
+      - name: Publicar em Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Concursa v${{ github.run_number }}
+          files: concursa.apk
