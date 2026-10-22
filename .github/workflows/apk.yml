@@ -1,48 +1,88 @@
-name: Gerar APK 
+name: Gerar APK
+
 on:
-  push: {branches: [main]}
+  push:
+    branches:
+      - main
   workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: {distribution: temurin, java-version: "17"}
-      - uses: subosito/flutter-action@v2
-        with: {channel: stable, cache: true}
-      - name: Organizar arquivos
-        run: mkdir -p app/lib && cp main.dart app/lib/main.dart && cp pubspec.yaml app/pubspec.yaml
-      - name: Criar projeto Android
-        working-directory: app
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Verificar arquivos necessários
         run: |
-          cp lib/main.dart /tmp/main.dart && cp pubspec.yaml /tmp/pubspec.yaml
-          flutter create . --project-name concursa --platforms android --org br.com.concursa
-          cp /tmp/main.dart lib/main.dart && cp /tmp/pubspec.yaml pubspec.yaml
-          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
-          sed -i 's#<activity#<meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false"/>\n        <activity#' android/app/src/main/AndroidManifest.xml
-      - name: Compilar
+          test -f main.dart || (echo "ERRO: main.dart não está na raiz do repositório" && exit 1)
+          test -f pubspec.yaml || (echo "ERRO: pubspec.yaml não está na raiz do repositório" && exit 1)
+
+      - name: Criar projeto Flutter Android
+        run: flutter create app --project-name concursa --platforms android --org br.com.concursa
+
+      - name: Colocar arquivos do Concursa no projeto
+        run: |
+          cp main.dart app/lib/main.dart
+          cp pubspec.yaml app/pubspec.yaml
+
+      - name: Garantir permissão de internet
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/android/app/src/main/AndroidManifest.xml")
+          s = p.read_text(encoding="utf-8")
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+          if permission not in s:
+              s = s.replace("<manifest", "<manifest", 1)
+              pos = s.find(">")
+              s = s[:pos + 1] + "\n    " + permission + s[pos + 1:]
+              p.write_text(s, encoding="utf-8")
+          PY
+
+      - name: Instalar dependências e compilar APK
         working-directory: app
         run: |
           flutter pub get
           flutter build apk --release --build-number=${{ github.run_number }} --dart-define=API=${{ vars.API_URL }}
-      - name: Renomear APK
+
+      - name: Preparar APK para download
         run: cp app/build/app/outputs/flutter-apk/app-release.apk concursa.apk
-      - name: Verificar APK (se estiver inválido o build falha aqui)
+
+      - name: Verificar APK
         run: |
-          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
-          ls -l concursa.apk
-          $BT/apksigner verify --verbose concursa.apk
-          $BT/aapt dump badging concursa.apk | grep -E "^package:|sdkVersion|targetSdkVersion|native-code" || true
-          unzip -l concursa.apk | grep "lib/" | head -20 || true
-      - uses: actions/upload-artifact@v4
+          test -s concursa.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose concursa.apk
+          ls -lh concursa.apk
+
+      - name: Disponibilizar APK nos artefatos
+        uses: actions/upload-artifact@v4
         with:
           name: concursa-apk
           path: concursa.apk
-      - name: Publicar em Releases
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publicar APK em Releases
         uses: softprops/action-gh-release@v2
+        if: success()
         with:
           tag_name: v${{ github.run_number }}
           name: Concursa v${{ github.run_number }}
