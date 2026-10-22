@@ -54,6 +54,7 @@ def coletar_sync():
         for e in itens:
             t = f"{e.get('title','')} {e.get('summary','')}".lower()
             if "concurso" not in t and "edital" not in t: continue
+            if re.search(r"resultado|gabarito|homologa|convocad|nomead|classificad", t): continue
             status = "previsto" if re.search(r"previst|autoriz|comiss[aã]o|banca|ser[aá] realizado|deve sair", t) else "aberto"
             uf = uf0 if uf0 != "BR" else next((u for u in NOMES if re.search(rf"\b{u}\b", e.get("title", ""))), "BR")
             try: db.execute("insert into concursos(titulo,uf,status,link,data) values(?,?,?,?,?)", (e.title, uf, status, e.link, e.get("published", ""))); novos += 1
@@ -125,6 +126,10 @@ class Edital(BaseModel): conteudo: str
 @app.post("/apostila")
 def apostila(e: Edital, cfg: dict = Depends(cfgia)):
     if not cfg["key"]: return {"topicos": [], "apostila": "Configure sua IA (ícone do robô no topo) para gerar apostilas."}
-    topicos = json.loads(re.search(r"\[.*\]", ia(f"Divida este conteúdo programático em tópicos de estudo. Responda só um array JSON de strings:\n{e.conteudo}", cfg, 1500), re.S).group(0))
+    resp = ia(f"Divida este conteúdo programático em tópicos de estudo. Responda só um array JSON de strings:\n{e.conteudo}", cfg, 1500)
+    m = re.search(r"\[.*\]", resp, re.S)
+    try: topicos = json.loads(m.group(0)) if m else []
+    except Exception: topicos = []
+    if not topicos: return {"topicos": [], "apostila": "A IA não devolveu os tópicos. Confira sua chave e tente de novo. Resposta: " + resp[:300]}
     caps = [f"# {t}\n" + ia(f"Escreva um capítulo completo de apostila para concurso sobre '{t}': teoria detalhada, quadro comparativo, exemplos, pegadinhas de banca, base legal citada e 5 exercícios com gabarito. Não invente leis.", cfg, 3500) for t in topicos[:12]]
     return {"topicos": topicos, "apostila": "\n\n".join(caps)}
