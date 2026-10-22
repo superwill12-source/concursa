@@ -1,6 +1,6 @@
 name: Concursa APK
 
-'on':
+on:
   workflow_dispatch:
 
 jobs:
