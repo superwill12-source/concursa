@@ -1,11 +1,65 @@
-name: Concursa APK 
+name: Gerar APK do Concursa
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Test
-        run: echo "YAML valido"
+      - name: Baixar cÃģdigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Criar projeto Android
+        run: |
+          flutter create app --project-name concursa --platforms android --org br.com.concursa
+          rm -f app/test/widget_test.dart
+          cp pubspec.yaml app/pubspec.yaml
+          mkdir -p app/lib
+          cp main.dart question.dart database_service.dart home_screen.dart questions_screen.dart simulado_screen.dart import_screen.dart progress_screen.dart app/lib/
+
+      - name: Permitir internet no app
+        run: |
+          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' app/android/app/src/main/AndroidManifest.xml
+          grep -c "INTERNET" app/android/app/src/main/AndroidManifest.xml
+
+      - name: Instalar dependÃŠncias
+        working-directory: app
+        run: flutter pub get
+
+      - name: Compilar APK
+        working-directory: app
+        run: flutter build apk --release
+
+      - name: Renomear APK
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk concursa.apk
+
+      - name: Guardar APK nos artefatos
+        uses: actions/upload-artifact@v4
+        with:
+          name: concursa-apk
+          path: concursa.apk
+
+      - name: Publicar em Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Concursa v${{ github.run_number }}
+          files: concursa.apk
