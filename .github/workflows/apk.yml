@@ -52,6 +52,31 @@ jobs:
             exit 1
           fi
 
+      - name: Forçar compileSdk 36 também nos plugins
+        run: |
+          ARQ=app/android/build.gradle.kts
+          if [ ! -f "$ARQ" ]; then
+            echo "::error::Arquivo $ARQ não encontrado"
+            exit 1
+          fi
+          cat >> "$ARQ" <<'KTS'
+
+subprojects {
+    afterEvaluate {
+        val ext = extensions.findByName("android")
+        if (ext != null) {
+            try {
+                ext.javaClass.getMethod("setCompileSdk", Integer::class.java).invoke(ext, 36)
+            } catch (e: NoSuchMethodException) {
+                ext.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType).invoke(ext, 36)
+            }
+        }
+    }
+}
+KTS
+          echo "Final de $ARQ:"
+          tail -n 16 "$ARQ"
+
       - name: Permitir internet no app
         run: |
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' app/android/app/src/main/AndroidManifest.xml
