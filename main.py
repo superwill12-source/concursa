@@ -44,7 +44,10 @@ def cfgia(x_ia_provider: str = Header("gemini"), x_ia_key: str = Header(""), x_i
 def ia(prompt, cfg, max_tokens=3000):
     """Devolve (texto, None) em sucesso ou (None, mensagem_de_erro) em falha. Nunca guarda erro como resposta."""
     if not cfg["key"]: return None, "Configure sua IA: toque no ícone do robô no topo do app e cole sua chave."
-    url, padrao = PROV[cfg["prov"]]; m = cfg["model"] or padrao; k = cfg["key"]
+    url, padrao = PROV[cfg["prov"]]; k = cfg["key"]
+    m = re.sub(r"^models/", "", (cfg["model"] or "").strip())
+    valido = r"[A-Za-z0-9.\-]+" if cfg["prov"] == "gemini" else r"[A-Za-z0-9._:/\-]+"
+    if not re.fullmatch(valido, m): m = padrao  # nome de modelo inválido: usa o padrão da IA
     try:
         if cfg["prov"] == "gemini":
             resp = httpx.post(url.format(m=m), headers={"x-goog-api-key": k}, timeout=120, json={"contents": [{"parts": [{"text": prompt}]}]})
@@ -54,7 +57,7 @@ def ia(prompt, cfg, max_tokens=3000):
             resp = httpx.post(url, headers={"Authorization": f"Bearer {k}"}, timeout=120, json={"model": m, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]})
         r = resp.json() if resp.content else {}
         if resp.status_code >= 400 or "error" in r:
-            return None, f"A IA {cfg['prov']} recusou o pedido (código {resp.status_code}): {str(r.get('error', r))[:300]}"
+            return None, f"A IA {cfg['prov']} (modelo {m}) recusou o pedido (código {resp.status_code}): {str(r.get('error', r))[:300]}"
         if cfg["prov"] == "gemini":
             return r["candidates"][0]["content"]["parts"][0]["text"], None
         if cfg["prov"] == "anthropic":
