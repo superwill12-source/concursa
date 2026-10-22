@@ -45,7 +45,7 @@ def ia(prompt, cfg, max_tokens=3000):
         return "Não consegui falar com a IA. Confira a chave, o modelo e se ainda há cota gratuita."
 
 # ---------- 1. Coletor de concursos (abertos e previstos) ----------
-@app.post("/coletar")
+@app.api_route("/coletar", methods=["GET", "POST"])
 def coletar():
     novos = 0
     for uf0, url in FEEDS:
