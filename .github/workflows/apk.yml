@@ -1,11 +1,11 @@
 name: Build Android APK
 
 on:
+workflow_dispatch:
 push:
 paths:
-- 'Minimalista-Launcher-Projeto.zip'
+- '**'
 - '.github/workflows/apk.yml'
-workflow_dispatch:
 
 permissions:
 contents: read
@@ -15,8 +15,33 @@ build:
 runs-on: ubuntu-latest
 
 steps:
-  - name: Checkout repository
+  - name: Checkout Concursa
     uses: actions/checkout@v4
+
+  - name: Locate Flutter project
+    id: project
+    shell: bash
+    run: |
+      set -e
+      FILE="$(find . -type f -name pubspec.yaml \
+        -not -path './.git/*' \
+        -not -path '*/.dart_tool/*' | head -n 1)"
+
+      if [ -z "$FILE" ]; then
+        echo "Não encontrei pubspec.yaml."
+        echo "Arquivos existentes:"
+        find . -maxdepth 3 -type f | head -n 100
+        exit 1
+      fi
+
+      DIR="$(dirname "$FILE")"
+      echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+      echo "Projeto encontrado em: $DIR"
+
+  - name: Install Flutter
+    uses: subosito/flutter-action@v2
+    with:
+      channel: stable
 
   - name: Install Java
     uses: actions/setup-java@v4
@@ -24,79 +49,16 @@ steps:
       distribution: temurin
       java-version: '17'
 
-  - name: Install Android SDK
-    uses: android-actions/setup-android@v3
-
-  - name: Extract project
-    shell: bash
-    run: |
-      set -e
-      ZIP="$(find . -maxdepth 4 -type f -name 'Minimalista-Launcher-Projeto.zip' | head -n 1)"
-      if [ -z "$ZIP" ]; then
-        echo "ERRO: ZIP do projeto não encontrado."
-        find . -maxdepth 4 -type f | head -n 100
-        exit 1
-      fi
-      mkdir -p build-source
-      unzip -o "$ZIP" -d build-source
-
-  - name: Locate project
-    id: project
-    shell: bash
-    run: |
-      set -e
-      FILE="$(find build-source -type f -name pubspec.yaml | head -n 1)"
-      if [ -n "$FILE" ]; then
-        DIR="$(dirname "$FILE")"
-        echo "type=flutter" >> "$GITHUB_OUTPUT"
-        echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-        exit 0
-      fi
-
-      FILE="$(find build-source -type f \( -name build.gradle -o -name build.gradle.kts \) | while read f; do
-        if [ "$(basename "$(dirname "$f")")" = "app" ]; then
-          d="$(dirname "$(dirname "$f")")"
-          if [ -f "$d/settings.gradle" ] || [ -f "$d/settings.gradle.kts" ]; then
-            echo "$d"
-            break
-          fi
-        fi
-      done)"
-
-      if [ -n "$FILE" ]; then
-        echo "type=gradle" >> "$GITHUB_OUTPUT"
-        echo "dir=$FILE" >> "$GITHUB_OUTPUT"
-        exit 0
-      fi
-
-      echo "ERRO: projeto Flutter ou Android não encontrado no ZIP."
-      find build-source -maxdepth 5 -type f | head -n 100
-      exit 1
-
-  - name: Install Flutter
-    if: steps.project.outputs.type == 'flutter'
-    uses: subosito/flutter-action@v2
-    with:
-      channel: stable
-
-  - name: Build Flutter APK
-    if: steps.project.outputs.type == 'flutter'
+  - name: Build Concursa APK
     working-directory: ${{ steps.project.outputs.dir }}
     run: |
       flutter pub get
-      flutter build apk --debug
+      flutter build apk --release
 
-  - name: Build Android APK
-    if: steps.project.outputs.type == 'gradle'
-    working-directory: ${{ steps.project.outputs.dir }}
-    run: gradle assembleDebug
-
-  - name: Upload APK
+  - name: Upload Concursa APK
     uses: actions/upload-artifact@v4
     with:
-      name: Minimalista-Launcher-APK
-      path: |
-        build-source/**/build/outputs/apk/debug/*.apk
-        build-source/**/build/app/outputs/flutter-apk/*.apk
+      name: Concursa-APK
+      path: ${{ steps.project.outputs.dir }}/build/app/outputs/flutter-apk/app-release.apk
       if-no-files-found: error
       retention-days: 7
