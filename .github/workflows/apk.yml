@@ -4,7 +4,7 @@ on:
 push:
 paths:
 - 'Minimalista-Launcher-Projeto.zip'
-- '.github/workflows/android.yml'
+- '.github/workflows/apk.yml'
 workflow_dispatch:
 
 permissions:
@@ -31,9 +31,10 @@ steps:
     shell: bash
     run: |
       set -e
-      ZIP=$(find . -maxdepth 3 -type f -name 'Minimalista-Launcher-Projeto.zip' | head -n 1)
+      ZIP="$(find . -maxdepth 4 -type f -name 'Minimalista-Launcher-Projeto.zip' | head -n 1)"
       if [ -z "$ZIP" ]; then
-        echo "ERRO: Minimalista-Launcher-Projeto.zip não encontrado."
+        echo "ERRO: ZIP do projeto não encontrado."
+        find . -maxdepth 4 -type f | head -n 100
         exit 1
       fi
       mkdir -p build-source
@@ -44,26 +45,31 @@ steps:
     shell: bash
     run: |
       set -e
-      FLUTTER_FILE=$(find build-source -type f -name pubspec.yaml -not -path '*/.dart_tool/*' | head -n 1)
-      if [ -n "$FLUTTER_FILE" ]; then
-        DIR=$(dirname "$FLUTTER_FILE")
+      FILE="$(find build-source -type f -name pubspec.yaml | head -n 1)"
+      if [ -n "$FILE" ]; then
+        DIR="$(dirname "$FILE")"
         echo "type=flutter" >> "$GITHUB_OUTPUT"
         echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-        echo "Flutter project: $DIR"
         exit 0
       fi
 
-      for FILE in $(find build-source -type f \( -name build.gradle -o -name build.gradle.kts \)); do
-        DIR=$(dirname "$FILE")
-        if [ "$(basename "$DIR")" = "app" ] && [ -f "$DIR/../settings.gradle" -o -f "$DIR/../settings.gradle.kts" ]; then
-          echo "type=gradle" >> "$GITHUB_OUTPUT"
-          echo "dir=$(dirname "$DIR")" >> "$GITHUB_OUTPUT"
-          echo "Android project: $(dirname "$DIR")"
-          exit 0
+      FILE="$(find build-source -type f \( -name build.gradle -o -name build.gradle.kts \) | while read f; do
+        if [ "$(basename "$(dirname "$f")")" = "app" ]; then
+          d="$(dirname "$(dirname "$f")")"
+          if [ -f "$d/settings.gradle" ] || [ -f "$d/settings.gradle.kts" ]; then
+            echo "$d"
+            break
+          fi
         fi
-      done
+      done)"
 
-      echo "ERRO: não encontrei um projeto Android válido dentro do ZIP."
+      if [ -n "$FILE" ]; then
+        echo "type=gradle" >> "$GITHUB_OUTPUT"
+        echo "dir=$FILE" >> "$GITHUB_OUTPUT"
+        exit 0
+      fi
+
+      echo "ERRO: projeto Flutter ou Android não encontrado no ZIP."
       find build-source -maxdepth 5 -type f | head -n 100
       exit 1
 
@@ -80,13 +86,7 @@ steps:
       flutter pub get
       flutter build apk --debug
 
-  - name: Setup Gradle
-    if: steps.project.outputs.type == 'gradle'
-    uses: gradle/actions/setup-gradle@v4
-    with:
-      gradle-version: '8.9'
-
-  - name: Build native Android APK
+  - name: Build Android APK
     if: steps.project.outputs.type == 'gradle'
     working-directory: ${{ steps.project.outputs.dir }}
     run: gradle assembleDebug
