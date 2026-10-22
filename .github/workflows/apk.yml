@@ -1,53 +1,48 @@
+
 name: Build Concursa APK
 
-on:
-push:
-branches:
-- main
-workflow_dispatch:
+'on':
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-steps:
-  - name: Download repository
-    uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-  - name: Install Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
 
-  - name: Install Flutter
-    uses: subosito/flutter-action@v2
-    with:
-      channel: stable
-      cache: true
+      - name: Check project
+        run: |
+          pwd
+          ls -la
+          test -f pubspec.yaml
 
-  - name: Verify Flutter project
-    run: |
-      test -f pubspec.yaml || {
-        echo "pubspec.yaml não encontrado na raiz."
-        exit 1
-      }
-      flutter --version
-      flutter doctor -v
+      - name: Install dependencies
+        run: flutter pub get
 
-  - name: Install dependencies
-    run: flutter pub get
+      - name: Build APK
+        run: flutter build apk --release
 
-  - name: Build Concursa APK
-    run: flutter build apk --release
-
-  - name: Upload Concursa APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: Concursa-APK
-      path: build/app/outputs/flutter-apk/app-release.apk
-      if-no-files-found: error
-      retention-days: 7
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Concursa-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
