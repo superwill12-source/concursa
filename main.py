@@ -30,7 +30,7 @@ FEEDS.append(("BR", B + quote("concurso público previsto autorizado")))
 
 def rows(q, a=()): return [dict(r) for r in db.execute(q, a)]
 PROV = {  # provedor: (url, modelo padrão)
- "gemini": ("https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent", "gemini-2.5-flash"),
+ "gemini": ("https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent", "gemini-3.1-flash-lite"),
  "groq": ("https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile"),
  "openrouter": ("https://openrouter.ai/api/v1/chat/completions", "meta-llama/llama-3.3-70b-instruct:free"),
  "openai": ("https://api.openai.com/v1/chat/completions", "gpt-4o-mini"),
@@ -41,6 +41,8 @@ PROV = {  # provedor: (url, modelo padrão)
 def cfgia(x_ia_provider: str = Header("gemini"), x_ia_key: str = Header(""), x_ia_model: str = Header("")):
     return {"prov": x_ia_provider if x_ia_provider in PROV else "gemini", "key": x_ia_key.strip(), "model": x_ia_model.strip()}
 
+GEMINI_FALLBACK = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-flash-latest"]
+
 def ia(prompt, cfg, max_tokens=3000):
     """Devolve (texto, None) em sucesso ou (None, mensagem_de_erro) em falha. Nunca guarda erro como resposta."""
     if not cfg["key"]: return None, "Configure sua IA: toque no ícone do robô no topo do app e cole sua chave."
@@ -50,7 +52,12 @@ def ia(prompt, cfg, max_tokens=3000):
     if not re.fullmatch(valido, m): m = padrao  # nome de modelo inválido: usa o padrão da IA
     try:
         if cfg["prov"] == "gemini":
-            resp = httpx.post(url.format(m=m), headers={"x-goog-api-key": k}, timeout=120, json={"contents": [{"parts": [{"text": prompt}]}]})
+            # Se o modelo escolhido não estiver disponível, testa outros da lista até um responder
+            cands = [m] if cfg["model"] else [m] + [x for x in GEMINI_FALLBACK if x != m]
+            for m in cands:
+                resp = httpx.post(url.format(m=m), headers={"x-goog-api-key": k}, timeout=120, json={"contents": [{"parts": [{"text": prompt}]}]})
+                if resp.status_code not in (400, 404): break
+            ok = resp.status_code < 400
         elif cfg["prov"] == "anthropic":
             resp = httpx.post(url, headers={"x-api-key": k, "anthropic-version": "2023-06-01"}, timeout=120, json={"model": m, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]})
         else:
