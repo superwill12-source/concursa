@@ -1,20 +1,21 @@
 name: concursa
-description: Concursa - acesso gratuito a provas anteriores e simulados.
+description: Aplicativo gratuito de estudos para concursos públicos.
 publish_to: "none"
-version: 1.1.0+2
-
+version: 1.0.0+1
 environment:
   sdk: ">=3.3.0 <4.0.0"
-
 dependencies:
   flutter:
     sdk: flutter
-  url_launcher: ^6.3.2
-
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+  shared_preferences: ^2.2.3
+  file_picker: ^8.0.7
+  share_plus: ^10.0.2
+  path_provider: ^2.1.4
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
-
 flutter:
   uses-material-design: true

@@ -1,0 +1,15 @@
+import 'package:flutter/material.dart';
+import 'database_service.dart';
+import 'main.dart';
+class HomeScreen extends StatefulWidget {const HomeScreen({super.key}); @override State<HomeScreen> createState()=>_HomeScreenState();}
+class _HomeScreenState extends State<HomeScreen>{Map<String,int> stats={}; @override void initState(){super.initState();load();} Future<void> load()async{final s=await DatabaseService.instance.stats();if(mounted)setState(()=>stats=s);}
+@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Concursa',style:TextStyle(fontWeight:FontWeight.bold)),actions:[IconButton(tooltip:'Atualizar',onPressed:load,icon:const Icon(Icons.refresh))]),body:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(18),children:[
+Container(padding:const EdgeInsets.all(22),decoration:BoxDecoration(color:lime.withValues(alpha:.12),borderRadius:BorderRadius.circular(24)),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('SUA APROVAÇÃO COMEÇA AQUI',style:TextStyle(color:lime,fontSize:12,fontWeight:FontWeight.bold)),SizedBox(height:10),Text('Estude no seu ritmo.',style:TextStyle(fontSize:27,fontWeight:FontWeight.bold)),SizedBox(height:6),Text('Questões, simulados e evolução em um só lugar.') ])),
+const SizedBox(height:20),GridView.count(shrinkWrap:true,physics:const NeverScrollableScrollPhysics(),crossAxisCount:2,mainAxisSpacing:10,crossAxisSpacing:10,childAspectRatio:1.45,children:[
+stat('Questões',stats['questions']??0,Icons.library_books),stat('Respondidas',stats['answered']??0,Icons.check_circle_outline),stat('Acertos',stats['correct']??0,Icons.verified),stat('Favoritas',stats['favorites']??0,Icons.star)
+]),const SizedBox(height:18),const Text('Comece agora',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const SizedBox(height:10),
+action(context,'Banco de questões','Pesquise por assunto, banca ou palavra-chave',Icons.search,1),action(context,'Simulado','Treine e veja sua pontuação',Icons.quiz,2),action(context,'Meu progresso','Confira respostas e sessões anteriores',Icons.insights,3),action(context,'Importar questões','Adicione questões próprias em formato JSON',Icons.file_upload,4),
+const SizedBox(height:18),const Text('Nota: as questões iniciais são exemplos didáticos, não questões oficiais de bancas.',style:TextStyle(color:Colors.white60,fontSize:12))
+])));}
+Widget stat(String title,int value,IconData icon)=>Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(icon,color:lime),const Spacer(),Text('$value',style:const TextStyle(fontSize:25,fontWeight:FontWeight.bold)),Text(title,style:const TextStyle(color:Colors.white70))])));
+Widget action(BuildContext c,String title,String sub,IconData icon,int tab)=>Card(child:ListTile(leading:CircleAvatar(backgroundColor:lime.withValues(alpha:.15),child:Icon(icon,color:lime)),title:Text(title,style:const TextStyle(fontWeight:FontWeight.bold)),subtitle:Text(sub),trailing:const Icon(Icons.chevron_right),onTap:()=> appTabIndex.value=tab));
