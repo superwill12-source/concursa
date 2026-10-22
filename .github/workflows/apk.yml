@@ -48,7 +48,18 @@ jobs:
 
       - name: Configurar SDK Android para dependências atuais
         run: |
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' app/android/app/build.gradle.kts
+          - name: Configure Android SDK
+  shell: bash
+  run: |
+    FILE=$(find . -type f \( -name "build.gradle.kts" -o -name "build.gradle" \) -path "*/app/*" | head -n 1)
+    if [ -z "$FILE" ]; then
+      echo "ERRO: arquivo build.gradle não encontrado"
+      find . -maxdepth 5 -type f \( -name "build.gradle" -o -name "build.gradle.kts" \)
+      exit 1
+    fi
+    echo "Arquivo encontrado: $FILE"
+    sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$FILE"
+    sed -i 's/compileSdk flutter.compileSdkVersion/compileSdk 36/' "$FILE"
           sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' app/android/app/build.gradle
           grep -n "compileSdk" app/android/app/build.gradle* || true
 
