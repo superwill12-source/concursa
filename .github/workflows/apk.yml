@@ -1,80 +1,52 @@
-name: Build Concursa APK
+name: Concursa APK
 
 'on':
+workflow_dispatch:
 push:
 branches:
 - main
-workflow_dispatch:
-
-permissions:
-contents: read
 
 jobs:
 build:
 runs-on: ubuntu-latest
-
 steps:
-  - name: Checkout Concursa
-    uses: actions/checkout@v4
-
-  - name: Setup Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+- name: Checkout
+uses: actions/checkout@v4
 
   - name: Setup Flutter
     uses: subosito/flutter-action@v2
     with:
       channel: stable
-      cache: true
 
-  - name: Verify and prepare project
-    shell: bash
+  - name: Check files
     run: |
-      set -e
+      echo "Raiz do projeto:"
+      ls -la
+      echo "Arquivos Dart:"
+      find . -maxdepth 4 -name '*.dart' -not -path './.git/*'
+      test -f pubspec.yaml
 
-      if [ ! -f pubspec.yaml ]; then
-        echo "ERRO: pubspec.yaml não encontrado na raiz."
-        exit 1
-      fi
-
+  - name: Prepare entry point
+    run: |
+      mkdir -p lib
       if [ ! -f lib/main.dart ]; then
         if [ -f main.dart ]; then
-          mkdir -p lib
           cp main.dart lib/main.dart
         else
-          echo "ERRO: main.dart não encontrado."
-          find . -maxdepth 4 -name main.dart
+          echo "main.dart não encontrado"
           exit 1
         fi
       fi
 
-      mkdir -p lib
-
-      for file in database_service.dart home_screen.dart import_screen.dart progress_screen.dart question.dart questions_screen.dart; do
-        if [ -f "$file" ] && [ ! -f "lib/$file" ]; then
-          cp "$file" "lib/$file"
-        fi
-      done
-
-      echo "Estrutura do projeto:"
-      find lib -maxdepth 2 -type f
-
   - name: Install dependencies
     run: flutter pub get
 
-  - name: Check Dart code
-    run: flutter analyze --no-pub
-    continue-on-error: true
-
-  - name: Build release APK
+  - name: Build APK
     run: flutter build apk --release
 
-  - name: Upload Concursa APK
+  - name: Upload APK
     uses: actions/upload-artifact@v4
     with:
       name: Concursa-APK
       path: build/app/outputs/flutter-apk/app-release.apk
       if-no-files-found: error
-      retention-days: 7
