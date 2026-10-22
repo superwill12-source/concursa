@@ -14,7 +14,14 @@ create table if not exists comentarios(id integer primary key, questao_id, autor
 NOMES = {"AC":"Acre","AL":"Alagoas","AP":"Amapá","AM":"Amazonas","BA":"Bahia","CE":"Ceará","DF":"Distrito Federal","ES":"Espírito Santo","GO":"Goiás","MA":"Maranhão","MT":"Mato Grosso","MS":"Mato Grosso do Sul","MG":"Minas Gerais","PA":"Pará","PB":"Paraíba","PR":"Paraná","PE":"Pernambuco","PI":"Piauí","RJ":"Rio de Janeiro","RN":"Rio Grande do Norte","RS":"Rio Grande do Sul","RO":"Rondônia","RR":"Roraima","SC":"Santa Catarina","SP":"São Paulo","SE":"Sergipe","TO":"Tocantins"}
 G = "https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-419&q="
 B = "https://www.bing.com/news/search?format=rss&mkt=pt-BR&q="
-FEEDS = []
+# Sites de concursos (feeds RSS publicados para leitura; o app mostra só título e link de origem)
+SITES = [
+ ("BR", "https://blog.grancursosonline.com.br/feed/"),
+ ("BR", "https://www.estrategiaconcursos.com.br/blog/feed/"),
+ ("BR", "https://www.pciconcursos.com.br/rss"),
+ ("BR", "https://www.concursosnobrasil.com.br/feed/"),
+]
+FEEDS = list(SITES)
 for uf, nome in [("BR", "Brasil")] + list(NOMES.items()):
     termo = "concurso público" if uf == "BR" else f"concurso público {nome}"
     FEEDS.append((uf, B + quote(termo + " edital inscrições")))
