@@ -46,20 +46,38 @@ def ia(prompt, cfg, max_tokens=3000):
         return "Não consegui falar com a IA. Confira a chave, o modelo e se ainda há cota gratuita."
 
 # ---------- 1. Coletor de concursos (abertos e previstos) ----------
+LAST = {"fontes": [], "novos": 0, "erro": ""}
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"}
 def coletar_sync():
-    novos = 0
+    novos = 0; fontes = []
     for uf0, url in FEEDS:
-        try: itens = feedparser.parse(url).entries[:30]
-        except Exception: continue
+        info = {"uf": uf0, "recebidas": 0, "aceitas": 0, "erro": ""}
+        try:
+            r = httpx.get(url, headers=UA, timeout=15, follow_redirects=True)
+            info["http"] = r.status_code
+            itens = feedparser.parse(r.text).entries[:30]
+            info["recebidas"] = len(itens)
+        except Exception as ex:
+            info["erro"] = str(ex)[:200]; fontes.append(info); continue
         for e in itens:
             t = f"{e.get('title','')} {e.get('summary','')}".lower()
             if "concurso" not in t and "edital" not in t: continue
             if re.search(r"resultado|gabarito|homologa|convocad|nomead|classificad", t): continue
-            status = "previsto" if re.search(r"previst|autoriz|comiss[aã]o|banca|ser[aá] realizado|deve sair", t) else "aberto"
+            status = "previsto" if re.search(r"previst|autoriz|comiss[aã]o|ser[aá] realizado|deve sair", t) else "aberto"
             uf = uf0 if uf0 != "BR" else next((u for u in NOMES if re.search(rf"\b{u}\b", e.get("title", ""))), "BR")
-            try: db.execute("insert into concursos(titulo,uf,status,link,data) values(?,?,?,?,?)", (e.title, uf, status, e.link, e.get("published", ""))); novos += 1
+            try:
+                db.execute("insert into concursos(titulo,uf,status,link,data) values(?,?,?,?,?)", (e.title, uf, status, e.link, e.get("published", "")))
+                novos += 1; info["aceitas"] += 1
             except sqlite3.IntegrityError: pass
-    db.commit(); return {"novos": novos}
+        fontes.append(info)
+    db.commit()
+    LAST.update(fontes=fontes, novos=novos)
+    return {"novos": novos}
+
+@app.get("/diagnostico")
+def diagnostico():
+    total = rows("select count(*) as n from concursos")[0]["n"]
+    return {"concursos_no_banco": total, "ultima_busca": LAST}
 
 SEED = [("Exemplo",2024,"Português","facil","Assinale a frase com a concordância verbal correta.",[["A","Haviam muitos candidatos."],["B","Fazem dois anos que estudo."],["C","Houve muitos candidatos."],["D","Existe muitos candidatos."]],"C"),
 ("Exemplo",2024,"Raciocínio Lógico","medio","A negação de “todo aprovado estudou” é:",[["A","Nenhum aprovado estudou."],["B","Algum aprovado não estudou."],["C","Todo aprovado não estudou."],["D","Algum reprovado estudou."]],"B"),
