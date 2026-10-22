@@ -1,0 +1,31 @@
+name: Gerar APK
+on:
+  push: {branches: [main]}
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "17"}
+      - uses: subosito/flutter-action@v2
+        with: {channel: stable, cache: true}
+      - name: Organizar arquivos
+        run: mkdir -p app/lib && cp main.dart app/lib/main.dart && cp pubspec.yaml app/pubspec.yaml
+      - name: Criar projeto Android
+        working-directory: app
+        run: |
+          cp lib/main.dart /tmp/main.dart && cp pubspec.yaml /tmp/pubspec.yaml
+          flutter create . --project-name concursa --platforms android --org br.com.concursa
+          cp /tmp/main.dart lib/main.dart && cp /tmp/pubspec.yaml pubspec.yaml
+          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
+      - name: Compilar
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build apk --release --dart-define=API=${{ vars.API_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: concursa-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
