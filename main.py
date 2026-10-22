@@ -49,11 +49,12 @@ def ia(prompt, cfg, max_tokens=3000):
     url, padrao = PROV[cfg["prov"]]; k = cfg["key"]
     m = re.sub(r"^models/", "", (cfg["model"] or "").strip())
     valido = r"[A-Za-z0-9.\-]+" if cfg["prov"] == "gemini" else r"[A-Za-z0-9._:/\-]+"
-    if not re.fullmatch(valido, m): m = padrao  # nome de modelo inválido: usa o padrão da IA
+    modelo_valido = bool(m) and bool(re.fullmatch(valido, m))
+    if not modelo_valido: m = padrao  # campo vazio ou com texto que não é nome de modelo
     try:
         if cfg["prov"] == "gemini":
             # Se o modelo escolhido não estiver disponível, testa outros da lista até um responder
-            cands = [m] if cfg["model"] else [m] + [x for x in GEMINI_FALLBACK if x != m]
+            cands = [m] if modelo_valido else [m] + [x for x in GEMINI_FALLBACK if x != m]
             for m in cands:
                 resp = httpx.post(url.format(m=m), headers={"x-goog-api-key": k}, timeout=120, json={"contents": [{"parts": [{"text": prompt}]}]})
                 if resp.status_code not in (400, 404): break
