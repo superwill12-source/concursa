@@ -1,5 +1,5 @@
 from urllib.parse import quote
-import os, re, json, threading, random, sqlite3, feedparser, pdfplumber
+import os, re, json, time, threading, random, sqlite3, feedparser, pdfplumber
 from fastapi import Depends, Header, FastAPI, UploadFile, Form
 from pydantic import BaseModel
 import httpx, socket
@@ -56,9 +56,13 @@ def ia(prompt, cfg, max_tokens=3000):
             # Se o modelo escolhido não estiver disponível, testa outros da lista até um responder
             cands = [m] if modelo_valido else [m] + [x for x in GEMINI_FALLBACK if x != m]
             for m in cands:
-                resp = httpx.post(url.format(m=m), headers={"x-goog-api-key": k}, timeout=120, json={"contents": [{"parts": [{"text": prompt}]}]})
-                if resp.status_code not in (400, 404): break
-            ok = resp.status_code < 400
+                for tentativa in range(3):  # 429/500/503 = limite ou sobrecarga temporária: espera e tenta de novo
+                    resp = httpx.post(url.format(m=m), headers={"x-goog-api-key": k}, timeout=120,
+                                      json={"contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                                            "generationConfig": {"maxOutputTokens": 8192, "temperature": 0.4}})
+                    if resp.status_code not in (429, 500, 503): break
+                    time.sleep(4 * (tentativa + 1))
+                if resp.status_code not in (400, 404, 429, 500, 503): break  # sucesso ou erro definitivo: não troca de modelo
         elif cfg["prov"] == "anthropic":
             resp = httpx.post(url, headers={"x-api-key": k, "anthropic-version": "2023-06-01"}, timeout=120, json={"model": m, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]})
         else:
@@ -67,7 +71,13 @@ def ia(prompt, cfg, max_tokens=3000):
         if resp.status_code >= 400 or "error" in r:
             return None, f"A IA {cfg['prov']} (modelo {m}) recusou o pedido (código {resp.status_code}): {str(r.get('error', r))[:300]}"
         if cfg["prov"] == "gemini":
-            return r["candidates"][0]["content"]["parts"][0]["text"], None
+            cand = (r.get("candidates") or [{}])[0]
+            partes = (cand.get("content") or {}).get("parts") or []
+            texto = "".join(p.get("text", "") for p in partes if not p.get("thought")).strip()
+            if not texto:
+                motivo = cand.get("finishReason") or r.get("promptFeedback", {}).get("blockReason") or "desconhecido"
+                return None, f"O Gemini ({m}) não devolveu texto. Motivo: {motivo}. Tente de novo ou reduza o conteúdo do edital."
+            return texto, None
         if cfg["prov"] == "anthropic":
             return r["content"][0]["text"], None
         return r["choices"][0]["message"]["content"], None
@@ -193,7 +203,7 @@ def apostila(e: Edital, cfg: dict = Depends(cfgia)):
     except Exception: topicos = []
     if not topicos: return {"topicos": [], "apostila": "A IA não devolveu os tópicos em formato válido. Resposta: " + resp[:300]}
     caps = []
-    for t in topicos[:12]:
+    for t in topicos[:6]:  # limite por pedido: evita estourar o tempo de resposta do servidor
         cap, erro = ia(f"Escreva um capítulo completo de apostila para concurso sobre '{t}': teoria detalhada, quadro comparativo, exemplos, pegadinhas de banca, base legal citada e 5 exercícios com gabarito. Não invente leis.", cfg, 3500)
         caps.append(f"# {t}\n" + (cap if not erro else erro))
     return {"topicos": topicos, "apostila": "\n\n".join(caps)}
